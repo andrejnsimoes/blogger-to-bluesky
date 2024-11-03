@@ -66,7 +66,15 @@ jobs:
                   byte_start = len(post_text.encode('utf-8'))
                   byte_end = byte_start + len(url.encode('utf-8'))
                   
-                  # Create the post with embedded URL
+                  # Create external link embed
+                  external = {
+                      "$type": "app.bsky.embed.external",
+                      "external": {
+                          "uri": url
+                      }
+                  }
+                  
+                  # Create the post with embedded URL and preview card
                   resp = client.send_post(
                       text=f"{post_text}{url}",
                       facets=[{
@@ -78,7 +86,8 @@ jobs:
                               "$type": "app.bsky.richtext.facet#link",
                               "uri": url
                           }]
-                      }]
+                      }],
+                      embed=external
                   )
                   
                   # Add delay between posts to avoid rate limiting

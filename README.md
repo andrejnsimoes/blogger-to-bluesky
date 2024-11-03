@@ -13,6 +13,7 @@ This GitHub Action automatically posts new entries from your Blogger RSS feed to
    - `BLUESKY_HANDLE`: Your Bluesky handle (e.g., `username.bsky.social`)
    - `BLUESKY_PASSWORD`: Your Bluesky app password (create one at https://bsky.app/settings/app-passwords)
    - `RSS_FEED_URL`: Your Blogger RSS feed URL (usually `https://yourblog.blogspot.com/feeds/posts/default`)
+   - `MAX_POSTS`: Number of recent posts to check from the RSS feed (optional, defaults to 10)
 
 3. **Enable GitHub Actions**
    - Go to the "Actions" tab
@@ -21,6 +22,7 @@ This GitHub Action automatically posts new entries from your Blogger RSS feed to
 ## How It Works
 
 - The action checks your Blogger RSS feed every 4 hours
+- Processes only the most recent posts (controlled by MAX_POSTS)
 - New posts are automatically shared on your Bluesky profile
 - Each post includes:
   - The blog post title
