@@ -8,9 +8,13 @@ on:
 jobs:
   post-to-bluesky:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Add explicit permissions for repository writes
     
     steps:
       - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use GitHub token for authentication
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -70,7 +74,9 @@ jobs:
                   external = {
                       "$type": "app.bsky.embed.external",
                       "external": {
-                          "uri": url
+                          "uri": url,
+                          "title": title,
+                          "description": description,
                       }
                   }
                   
