@@ -62,6 +62,7 @@ jobs:
                   # Get the title and URL
                   title = entry.title.strip()
                   url = entry.link
+                  description = entry.description.strip()
                   
                   # Add an invisible character after the title to separate it from the URL
                   post_text = f"{title}\u200B"
