@@ -33,6 +33,7 @@ jobs:
           BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
           BLUESKY_PASSWORD: ${{ secrets.BLUESKY_PASSWORD }}
           RSS_FEED_URL: ${{ secrets.RSS_FEED_URL }}
+          MAX_POSTS: ${{ secrets.MAX_POSTS }}
         run: |
           cat << 'EOF' > process_feed.py
           import feedparser
@@ -54,25 +55,28 @@ jobs:
           
           def post_to_bluesky(client, entry):
               try:
-                  # Just post the title with an embedded link
-                  content = entry.title
+                  # Get the title and URL
+                  title = entry.title.strip()
+                  url = entry.link
                   
-                  # Ensure title fits within Bluesky's limit
-                  max_length = 300
-                  if len(content) > max_length:
-                      content = content[:max_length-3] + "..."
+                  # Add an invisible character after the title to separate it from the URL
+                  post_text = f"{title}\u200B"
                   
-                  # Create post with embedded link for preview card
+                  # Create facet for the hidden link at the end
+                  byte_start = len(post_text.encode('utf-8'))
+                  byte_end = byte_start + len(url.encode('utf-8'))
+                  
+                  # Create the post with embedded URL
                   resp = client.send_post(
-                      text=content,
+                      text=f"{post_text}{url}",
                       facets=[{
                           "index": {
-                              "byteStart": len(content) + 1,
-                              "byteEnd": len(content) + len(entry.link) + 1
+                              "byteStart": byte_start,
+                              "byteEnd": byte_end
                           },
                           "features": [{
                               "$type": "app.bsky.richtext.facet#link",
-                              "uri": entry.link
+                              "uri": url
                           }]
                       }]
                   )
@@ -89,16 +93,25 @@ jobs:
               client = Client()
               client.login(os.environ['BLUESKY_HANDLE'], os.environ['BLUESKY_PASSWORD'])
               
+              # Get max posts to process (default to 10 if not set)
+              max_posts = int(os.environ.get('MAX_POSTS', 10))
+              
               # Parse RSS feed
               feed = feedparser.parse(os.environ['RSS_FEED_URL'])
               posted_entries = get_posted_entries()
               
-              # Sort entries by date (newest last to post in chronological order)
+              # Sort entries by date (newest first)
               entries = sorted(
                   feed.entries,
                   key=lambda entry: entry.get('published_parsed', entry.get('updated_parsed')),
-                  reverse=False
+                  reverse=True
               )
+              
+              # Take only the most recent entries based on MAX_POSTS
+              entries = entries[:max_posts]
+              
+              # Reverse the order to post oldest first
+              entries.reverse()
               
               # Track newly posted entries
               newly_posted = set()
@@ -111,12 +124,14 @@ jobs:
                   if entry_id not in posted_entries:
                       if post_to_bluesky(client, entry):
                           newly_posted.add(entry_id)
+                          print(f"Successfully posted: {entry.title}")
               
               # Update our tracking with successfully posted entries
               posted_entries.update(newly_posted)
               save_posted_entries(posted_entries)
               
               # Print summary
+              print(f"Processed the last {max_posts} posts from RSS feed")
               print(f"Posted {len(newly_posted)} new entries to Bluesky")
           
           if __name__ == "__main__":
