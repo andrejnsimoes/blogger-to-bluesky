@@ -1,0 +1,134 @@
+name: RSS to Bluesky Poster
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Runs every 4 hours
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  post-to-bluesky:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install feedparser atproto
+          
+      - name: Create feed tracker if not exists
+        run: |
+          if [ ! -f "posted_entries.json" ]; then
+            echo "[]" > posted_entries.json
+          fi
+          
+      - name: Process RSS and post to Bluesky
+        env:
+          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          BLUESKY_PASSWORD: ${{ secrets.BLUESKY_PASSWORD }}
+          RSS_FEED_URL: ${{ secrets.RSS_FEED_URL }}
+        run: |
+          cat << 'EOF' > process_feed.py
+          import feedparser
+          import os
+          import json
+          import time
+          from atproto import Client
+          
+          def get_posted_entries():
+              try:
+                  with open('posted_entries.json', 'r') as f:
+                      return set(json.load(f))
+              except:
+                  return set()
+          
+          def save_posted_entries(posted_entries):
+              with open('posted_entries.json', 'w') as f:
+                  json.dump(list(posted_entries), f)
+          
+          def post_to_bluesky(client, entry):
+              try:
+                  # Just post the title with an embedded link
+                  content = entry.title
+                  
+                  # Ensure title fits within Bluesky's limit
+                  max_length = 300
+                  if len(content) > max_length:
+                      content = content[:max_length-3] + "..."
+                  
+                  # Create post with embedded link for preview card
+                  resp = client.send_post(
+                      text=content,
+                      facets=[{
+                          "index": {
+                              "byteStart": len(content) + 1,
+                              "byteEnd": len(content) + len(entry.link) + 1
+                          },
+                          "features": [{
+                              "$type": "app.bsky.richtext.facet#link",
+                              "uri": entry.link
+                          }]
+                      }]
+                  )
+                  
+                  # Add delay between posts to avoid rate limiting
+                  time.sleep(2)
+                  return True
+              except Exception as e:
+                  print(f"Error posting to Bluesky: {e}")
+                  return False
+          
+          def main():
+              # Initialize Bluesky client
+              client = Client()
+              client.login(os.environ['BLUESKY_HANDLE'], os.environ['BLUESKY_PASSWORD'])
+              
+              # Parse RSS feed
+              feed = feedparser.parse(os.environ['RSS_FEED_URL'])
+              posted_entries = get_posted_entries()
+              
+              # Sort entries by date (newest last to post in chronological order)
+              entries = sorted(
+                  feed.entries,
+                  key=lambda entry: entry.get('published_parsed', entry.get('updated_parsed')),
+                  reverse=False
+              )
+              
+              # Track newly posted entries
+              newly_posted = set()
+              
+              # Process entries
+              for entry in entries:
+                  entry_id = entry.id
+                  
+                  # Only post if we haven't posted this before
+                  if entry_id not in posted_entries:
+                      if post_to_bluesky(client, entry):
+                          newly_posted.add(entry_id)
+              
+              # Update our tracking with successfully posted entries
+              posted_entries.update(newly_posted)
+              save_posted_entries(posted_entries)
+              
+              # Print summary
+              print(f"Posted {len(newly_posted)} new entries to Bluesky")
+          
+          if __name__ == "__main__":
+              main()
+          EOF
+          
+          python process_feed.py
+          
+      - name: Commit changes to tracker
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add posted_entries.json
+          git commit -m "Update posted entries tracking" || exit 0
+          git push
